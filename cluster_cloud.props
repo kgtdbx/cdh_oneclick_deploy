@@ -1,0 +1,86 @@
+#######################  EDIT BELOW INFORMATION  #######################
+
+#Define you hdp cluster name here
+CLUSTERNAME=hdptest
+#OS version
+OS=centos7
+#Java version
+JAVA=jdk1.8.0_151
+JAVA_HOME=/usr/java/jdk1.8.0_151
+#Ambari Server version
+AMBARIVERSION=2.5.2.0
+#HDP version
+CLUSTER_VERSION=2.5.3.0
+#Parcel Version
+PARCEL_VERSION=5.14.0-1.cdh5.14.0.p0.24
+#HDP_UTILS version
+UTILS_VERSION=1.1.0.21
+#Number of nodes on which you are going to install Ambari and HDP components
+NUM_OF_NODES=1
+#Default password for all required passwords which are not specified in the blueprint or cluster creation template configurations
+DEFAULT_PASSWORD=hadoop
+
+
+#+++++ Remote Infrastructure++++#
+
+#Username to ssh into the nodes for Ambari and Hadoop installation
+SSH_USER=ec2-user
+#Password for above defined username
+SSH_SERVER_PASSWORD=
+#Specify Private Key path below, if you are using private key to ssh instead of 'password'
+SSH_SERVER_PRIVATE_KEY=/tmp/oneclick_key.pem
+#Specify domain name
+DOMAIN_NAME=example.com
+
+#+++++++++++++++++++++++++++++++#
+
+#Add your hostnames below ( Make sure it should be mentioned without FQDN )
+#NOTE: For Cloud Instances Please Enter Internal Hostname and IPaddress and public ipaddress for "PUBLIC_IP"
+#host 1 is considered always as Ambari Server node
+#If you are doing single node installation then remove all below host entries and keep only one entry
+
+HOST1=node2
+IP1=192.168.56.112
+PUBLIC_IP=192.168.56.112
+
+HOST2=node3
+IP2=192.168.56.113
+
+HOST3=node1
+IP3=192.168.56.111
+
+
+
+#######################  EDIT BELOW INFORMATION ONLY IF YOU KNOW WHAT YOU ARE DOING!! :)  #######################
+
+#Define your repository server EG. LOCAL or INTERNET. Make sure you should either use Local Repo server or Public to download packages
+#Comment unwanted entry below -
+#Repository server ipaddress
+REPO_SERVER=http://192.168.56.101/repo/cloudera/parcels/el7/
+# To download packages from Internet
+#REPO_SERVER=public
+
+
+#You can define "Services" to be installed on respective hosts with comma seperated values as mentioned below.
+#Make sure you can modify below section properly making sure all services dependencies are defined properly, else cluster installation with FAIL.
+HOST1_SERVICES="hdfs-BALANCER-BASE, hdfs-NAMENODE-BASE, hdfs-SECONDARYNAMENODE-BASE, hdfs-DATANODE-BASE, yarn-RESOURCEMANAGER-BASE, yarn-JOBHISTORY-BASE, yarn-NODEMANAGER-BASE, zookeeper-SERVER-BASE"
+HOST2_SERVICES="hdfs-DATANODE-BASE, yarn-NODEMANAGER-BASE, ZOOKEEPER_CLIENT"
+HOST3_SERVICES="hdfs-DATANODE-BASE, yarn-NODEMANAGER-BASE, ZOOKEEPER_CLIENT"
+
+#++++++++++++++++++++++++++++
+##For HDFS define below services
+###hdfs-BALANCER-BASE
+###hdfs-NAMENODE-BASE
+###hdfs-SECONDARYNAMENODE-BASE
+###hdfs-DATANODE-BASE
+###++++++++++++++++++++++++++++
+##For YARN define below services
+###yarn-RESOURCEMANAGER-BASE
+###yarn-JOBHISTORY-BASE
+###yarn-NODEMANAGER-BASE
+###++++++++++++++++++++++++++++
+##For ZOOKEEPER define below services
+###zookeeper-SERVER-BASE
+###
+###++++++++++++++++++++++++++++
+#
