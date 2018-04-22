@@ -1,30 +1,197 @@
 #!/bin/bash
 
 LOC=`pwd`
-PROPS=cluster_cloud.props
+PROPS=$1
+CLUSTER_PROPERTIES=$1
 source $LOC/$PROPS 2>/dev/null
-STACK_VERSION=`echo $CLUSTER_VERSION|cut -c1-3`
-AMBARI_HOST=$2
-NUMBER_OF_HOSTS=`grep HOST $LOC/$PROPS|grep -v SERVICES|wc -l`
-LAST_HOST=`grep HOST $LOC/$PROPS|grep -v SERVICES|head -n $NUMBER_OF_HOSTS|tail -1|cut -d'=' -f2`
+CM_AGENTS=`grep -w HOST[0-9]* $LOC/$CLUSTER_PROPERTIES|cut -d'=' -f2`
+CM_SERVER=`grep -w HOST[0-9]* $LOC/$CLUSTER_PROPERTIES|head -1|cut -d'=' -f2`.$DOMAIN_NAME
+NUM_OF_HOSTS=`grep HOST $LOC/$PROPS|grep -v SERVICES|wc -l`
+LAST_HOST=`grep HOST $LOC/$PROPS|grep -v SERVICES|head -n $NUM_OF_HOSTS|tail -1|cut -d'=' -f2`
 grep HOST $LOC/$PROPS|grep -v SERVICES|grep -v $LAST_HOST|cut -d'=' -f2 > $LOC/list
 OS_VERSION=`echo $OS|rev|cut -c1|rev`
 START_HST_NAME=`grep 'HOST[0-9]*' $LOC/$PROPS|grep -v SERVICES|head -1|cut -d'=' -f1` 2>/dev/null
 LAST_HST_NAME=`grep 'HOST[0-9]*' $LOC/$PROPS|grep -v SERVICES|tail -1|cut -d'=' -f1` 2>/dev/null
+PASSWORD=`grep -w SSH_SERVER_PASSWORD $LOC/$CLUSTER_PROPERTIES|cut -d'=' -f2`
+PVT_KEY=`grep -w SSH_SERVER_PRIVATE_KEY $LOC/$CLUSTER_PROPERTIES|cut -d'=' -f2`
 out_file=cdh
 
-num_of_hosts=`grep HOST /opt/cloudera_automated_install/cluster_cloud.props|grep -v SERVICES|wc -l`
-#i=1
+num_of_hosts=`grep HOST $LOC/$PROPS|grep -v SERVICES|wc -l`
 
-#until [ $i -gt $num_of_hosts ]
-#do
-#	i=$[$i+1]
-#	#echo "HOST defined are below"
-#	export HOST$i=`grep HOST$i $LOC/$PROPS |grep -v SERVICES| awk -F "=" '{print $2}'`
-##	i=`expr $i + 1`
-#done
 
-######### Generate Repo #########
+#+++++++++++++++++++++++
+# Usage Function
+if [ $# -ne 1 ]
+then
+        printf "Usage $0 /path-to/cluster.props\nExample: $0 /opt/single_multinode_autodeploy/<cluster props File> \n"
+        exit
+fi
+#+++++++++++++++++++++++
+
+#Function to print timestamp
+timestamp()
+{
+echo -e  "\033[36m`date +%Y-%m-%d-%H:%M:%S`\033[0m"
+}
+
+
+
+
+#+++++++++++++++++++++++
+# Check NUM_OF_NODES and NUM_OF_HOSTS in proeprties file
+
+if [[ $NUM_OF_NODES -eq $NUM_OF_HOSTS ]]
+then
+        echo "Both values are Equal" > /dev/null
+else
+        echo -e '\033[41mWARNING!!!!\033[0m \033[36m"NUM_OF_HOSTS" and "NUM_OF_NODES" defined in  $LOC/$CLUSTER_PROPERTIES are not equal. Please remove unwanted entries from file or correct "NUM_OF_NODES" value..\033[0m'
+        exit 1;
+fi
+
+#+++++++++++++++++++++++
+
+if [ -z $PVT_KEY ]
+then
+        echo -e "\033[32m`timestamp` \033[32mUsing Plain Password For Cluster Setup\033[0m"
+        ssh_cmd="sshpass -p $PASSWORD ssh"
+        scp_cmd="sshpass -p $PASSWORD scp"
+else
+        echo -e "\033[32m`timestamp` \033[32mUsing Private Key For Cluster Setup\033[0m"
+        ssh_cmd="ssh -i $PVT_KEY"
+        scp_cmd="scp -i $PVT_KEY"
+        if [ -e $PVT_KEY ]
+        then
+                echo "File Exist" &> /dev/null
+        else
+                echo -e "\033[35mPrivate key is missing.. Please check!!!\033[0m"
+                exit 1;
+        fi
+fi
+#+++++++++++++++++++++++
+prepare_hosts_file()
+{
+        echo -e  "127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4\n::1         localhost localhost.localdomain localhost6 localhost6.localdomain6" > /tmp/hosts
+for host in `grep -w HOST[0-9]* $LOC/$CLUSTER_PROPERTIES|cut -d'=' -f2`
+do
+        host_ip=`awk "/$host/{getline; print}"  $LOC/$CLUSTER_PROPERTIES|cut -d'=' -f 2`
+        echo $host_ip $host.$DOMAIN_NAME >> /tmp/hosts
+        if [ "$CLUSTER_PROPERTIES" = "cluster_cloud.props" ]
+        then
+                sudo sed -i "/$host/d" /etc/hosts
+                sudo bash -c "echo \"$host_ip $host.$DOMAIN_NAME\"  >> /etc/hosts"
+        fi
+done
+
+#+++++++++++++++++++++++
+}
+
+####### Generate CM Repo ########
+ambari_repo()
+{
+echo "[cm]
+name=Cloudera Manager
+baseurl=$CM_REPO_URL
+gpgcheck=0
+enabled=1
+priority=1" > /tmp/cm.repo
+}
+
+centos_repo()
+{
+#This will generate internal repo file for Ambari Setup
+echo "[Centos7]
+name=Centos7
+baseurl=http://$REPO_SERVER/repo/centos7/
+gpgcheck=0
+enabled=1
+priority=1" > /tmp/centos7.repo
+}
+
+#+++++++++++++++++++++++
+sudo rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm &> /dev/null
+sudo rpm -ivh http://$REPO_SERVER/repo/custom_pkgs/sshpass-1.06-2.el7.x86_64.rpm &> /tmp/sshpass_install.txt
+sudo yum -y install unzip wget 2&>1 /dev/null
+#+++++++++++++++++++++++
+
+localrepo_pre_rep ()
+{
+        for host in `echo $CM_AGENTS`
+        do
+                AMBARI_AGENT=`echo $host`.$DOMAIN_NAME
+                host_ip=` awk "/$host/{getline; print}"  $LOC/$CLUSTER_PROPERTIES|cut -d'=' -f 2`
+                if [ "$CLUSTER_PROPERTIES" = "cluster_cloud.props" ]
+                then
+        $ssh_cmd  -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null"  $USER@$host_ip sudo mkdir /etc/yum.repos.d/bkp 2> /dev/null
+                        wait
+        $ssh_cmd  -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null"  $USER@$host_ip "sudo mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/bkp/"  2> /dev/null
+                        wait
+        $scp_cmd -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null"  /tmp/cm.repo $USER@$host_ip:/tmp/cm.repo &> /dev/null
+                        wait
+        $ssh_cmd -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null"  $USER@$host_ip sudo cp /tmp/cm.repo /etc/yum.repos.d/ 2> /dev/null &
+                        wait
+        $scp_cmd -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null"  /tmp/centos7.repo $USER@$host_ip:/tmp/centos7.repo &> /dev/null
+                        wait
+        $ssh_cmd -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null"  $USER@$host_ip sudo cp /tmp/centos7.repo /etc/yum.repos.d/ 2> /dev/null
+        $ssh_cmd  -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null"  $USER@$host_ip sudo yum clean all 2&>1 /dev/null
+                fi
+        done
+}
+
+#+++++++++++++++++++++++
+java_install()
+{
+        echo -e  "\033[32m`timestamp` \033[31mWarning!!! JAVA PATH is not set\033[0m"
+        for host in `echo $CM_AGENTS`
+        do
+                HOST=`echo $host`.$DOMAIN_NAME
+                if [ "$CLUSTER_PROPERTIES" = "cluster_cloud.props" ]
+                then
+                        echo -e  "\033[32m`timestamp` \033[32mInstalling JAVA\033[0m"
+                        $ssh_cmd  -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null"  $USER@$HOST sudo yum install -y java-1.8.0-openjdk &> /tmp/java_install.txt
+                fi
+
+        done
+}
+#+++++++++++++++++++++++
+bootstrap_hosts()
+{
+set -x
+        echo -e "\033[32m`timestamp` \033[32mBootstrap Hosts \033[0m"
+        for host in `echo $CM_AGENTS`
+        do
+                HOST=`echo $host`.$DOMAIN_NAME
+                host_ip=` awk "/$host/{getline; print}"  $LOC/$CLUSTER_PROPERTIES|cut -d'=' -f 2`
+                if [ "$CLUSTER_PROPERTIES" = "cluster_cloud.props" ]
+                then
+                        wait
+                        sleep 2
+                        $scp_cmd -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null"  /tmp/hosts $USER@$host_ip:/tmp/hosts.org &> /dev/null &
+                        wait
+                        $ssh_cmd -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null"  $USER@$host_ip sudo mv /tmp/hosts.org /etc/hosts 2> /dev/null &
+                        $ssh_cmd -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null"  $USER@$host_ip sudo sed -i.bak "s/$USERNAME-$HOST/$HOST/g" /etc/sysconfig/network  2> /dev/null &
+                        $ssh_cmd -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null"  $USER@$host_ip "sudo echo HOSTNAME=$HOST >> /etc/sysconfig/network"  2> /dev/null &
+
+                        printf "sudo hostname "$HOST" 2>/dev/null\nsudo hostnamectl set-hostname "$HOST"\nsudo hostnamectl set-hostname "$HOST" --static\nsudo systemctl restart systemd-hostnamed\nsudo systemctl stop firewalld.service 2>/dev/null\nsudo systemctl disable firewalld.service 2> /dev/null" > /tmp/commands_centos7
+                        cat /tmp/commands_centos7|$ssh_cmd  -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null"  $USER@$host_ip 2>/dev/null
+			$ssh_cmd -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null"  $USER@$host_ip "sudo yum install -y cloudera-manager-agent " 2> /dev/null 
+			$ssh_cmd -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null" $USER@$host_ip "sudo sed -i 's/server_host=localhost/server_host=$CM_SERVER/g' /etc/cloudera-scm-agent/config.ini" 2> /dev/null &
+			$ssh_cmd -o "StrictHostKeyChecking no" -o "CheckHostIP=no" -o "UserKnownHostsFile=/dev/null" $USER@$host_ip "sudo /etc/init.d/cloudera-scm-agent start" 2> /dev/null 
+                fi
+	done
+}
+#+++++++++++++++++++++++
+
+cm_install(){
+sudo cd $LOC
+sudo sed -i 's:SELINUX=enforcing:SELINUX=disabled:g'  /etc/sysconfig/selinux 
+sudo setenforce 0
+sudo wget $CM_INSTALLER_BIN
+sudo chmod +x $LOC/cloudera-manager-installer.bin
+sudo $LOC/cloudera-manager-installer.bin --skip_repo_package=1 --i-agree-to-all-licenses --noprompt --noreadme --nooptions
+#sudo rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm &> /dev/null
+}
+#+++++++++++++++++++++++
+######### Generate CDH Repo #########
 
 echo "{
   \"items\" : [ {
@@ -33,13 +200,11 @@ echo "{
     \"sensitive\" : false
   }, {
     \"name\" : \"REMOTE_PARCEL_REPO_URLS\",
-    \"value\" : "\"$REPO_SERVER\"",
+    \"value\" : "\"$CDH_PARCEL_REPO\"",
     \"sensitive\" : false
   } ]
 }" > $LOC/repo.json
-#################################
-
-
+#++++++++++++++++++++++++++++++++
 ######### Template Function  #########
 cdh_version()
 {
@@ -47,7 +212,7 @@ echo "{
   \"cdhVersion\" : \"5.14.0\",
   \"displayName\" : \"$CLUSTERNAME\",
   \"cmVersion\" : \"5.14.0\",
-  \"repositories\" : [ \"$REPO_SERVER\" ],
+  \"repositories\" : [ \"$CDH_PARCEL_REPO\" ],
   \"products\" : [ {
     \"version\" : \"5.14.0-1.cdh5.14.0.p0.24\",
     \"product\" : \"CDH\"
@@ -171,30 +336,30 @@ echo -e "\n" >> $LOC/$out_file.json
 i=0
 for HOST in `grep -w 'HOST[0-9]*' $LOC/$PROPS|tr '\n' ' '`
 do
-	HST_NAME_VAR=`echo $HOST|cut -d'=' -f1`
+        HST_NAME_VAR=`echo $HOST|cut -d'=' -f1`
         if [ $HST_NAME_VAR == $START_HST_NAME ]
         then
-		i=$[$i+1]
-		HST_NAME_HOSTNAME=`echo $HOST|cut -d'=' -f2`
-        	SERVICES_LIST=`cat $LOC/$PROPS|grep "$HST_NAME_VAR"_SERVICES |awk -F"=" '{print $2}'|sed 's/,/", "/g'|sed -e 's/[^ ]*CLIENT"[^ ]*//ig'|sed 's/" /"/g'`
-		SERVICES_LIST=`echo $SERVICES_LIST | sed 's/,$//'`
+                i=$[$i+1]
+                HST_NAME_HOSTNAME=`echo $HOST|cut -d'=' -f2`
+                SERVICES_LIST=`cat $LOC/$PROPS|grep "$HST_NAME_VAR"_SERVICES |awk -F"=" '{print $2}'|sed 's/,/", "/g'|sed -e 's/[^ ]*CLIENT"[^ ]*//ig'|sed 's/" /"/g'`
+                SERVICES_LIST=`echo $SERVICES_LIST | sed 's/,$//'`
                 get_addhost_template >> $LOC/$out_file.json
         elif [ $HST_NAME_VAR == $LAST_HST_NAME ]
         then
-		i=$[$i+1]
-		HST_NAME_HOSTNAME=`echo $HOST|cut -d'=' -f2`
-        	SERVICES_LIST=`cat $LOC/$PROPS|grep "$HST_NAME_VAR"_SERVICES |awk -F"=" '{print $2}'|sed 's/,/", "/g'|sed -e 's/[^ ]*CLIENT"[^ ]*//ig'|sed 's/" /"/g'`
-        	#SERVICES_LIST=`cat $LOC/$PROPS|grep "$HST_NAME_VAR"_SERVICES |awk -F"=" '{print $2}'|sed 's/,/", "/g'|sed -e 's/[^ ]*CLIENT"[^ ]*//ig'|sed 's/" /"/g'|sed 's/ "//g'`
-		SERVICES_LIST=`echo $SERVICES_LIST| sed 's/"$//g'`
-		SERVICES_LIST=`echo $SERVICES_LIST| sed 's/,$//g'`
+                i=$[$i+1]
+                HST_NAME_HOSTNAME=`echo $HOST|cut -d'=' -f2`
+                SERVICES_LIST=`cat $LOC/$PROPS|grep "$HST_NAME_VAR"_SERVICES |awk -F"=" '{print $2}'|sed 's/,/", "/g'|sed -e 's/[^ ]*CLIENT"[^ ]*//ig'|sed 's/" /"/g'`
+                #SERVICES_LIST=`cat $LOC/$PROPS|grep "$HST_NAME_VAR"_SERVICES |awk -F"=" '{print $2}'|sed 's/,/", "/g'|sed -e 's/[^ ]*CLIENT"[^ ]*//ig'|sed 's/" /"/g'|sed 's/ "//g'`
+                SERVICES_LIST=`echo $SERVICES_LIST| sed 's/"$//g'`
+                SERVICES_LIST=`echo $SERVICES_LIST| sed 's/,$//g'`
                 get_last_template >> $LOC/$out_file.json
         else
-		i=$[$i+1]
-		HST_NAME_HOSTNAME=`echo $HOST|cut -d'=' -f2`
-        	SERVICES_LIST=`cat $LOC/$PROPS|grep "$HST_NAME_VAR"_SERVICES |awk -F"=" '{print $2}'|sed 's/,/", "/g'|sed -e 's/[^ ]*CLIENT"[^ ]*//ig'|sed 's/" /"/g'`
-        	#SERVICES_LIST=`cat $LOC/$PROPS|grep "$HST_NAME_VAR"_SERVICES |awk -F"=" '{print $2}'|sed 's/,/", "/g'|sed -e 's/[^ ]*CLIENT"[^ ]*//ig'|sed 's/" /"/g'|sed 's/ "//g'`
-		SERVICES_LIST=`echo $SERVICES_LIST| sed 's/"$//g'`
-		SERVICES_LIST=`echo $SERVICES_LIST| sed 's/,$//g'`
+                i=$[$i+1]
+                HST_NAME_HOSTNAME=`echo $HOST|cut -d'=' -f2`
+                SERVICES_LIST=`cat $LOC/$PROPS|grep "$HST_NAME_VAR"_SERVICES |awk -F"=" '{print $2}'|sed 's/,/", "/g'|sed -e 's/[^ ]*CLIENT"[^ ]*//ig'|sed 's/" /"/g'`
+                #SERVICES_LIST=`cat $LOC/$PROPS|grep "$HST_NAME_VAR"_SERVICES |awk -F"=" '{print $2}'|sed 's/,/", "/g'|sed -e 's/[^ ]*CLIENT"[^ ]*//ig'|sed 's/" /"/g'|sed 's/ "//g'`
+                SERVICES_LIST=`echo $SERVICES_LIST| sed 's/"$//g'`
+                SERVICES_LIST=`echo $SERVICES_LIST| sed 's/,$//g'`
                 get_addhostadd_template >> $LOC/$out_file.json
         fi
 done
@@ -211,22 +376,44 @@ do
         then
                 i=$[$i+1]
                 HST_NAME_HOSTNAME=`echo $HOST|cut -d'=' -f2`
-		instantiator_template >> $LOC/$out_file.json
-		instantiator1_template >> $LOC/$out_file.json
+                instantiator_template >> $LOC/$out_file.json
+                instantiator1_template >> $LOC/$out_file.json
         elif [ $HST_NAME_VAR == $LAST_HST_NAME ]
         then
                 i=$[$i+1]
                 HST_NAME_HOSTNAME=`echo $HOST|cut -d'=' -f2`
-		instantiator_final_template >> $LOC/$out_file.json
+                instantiator_final_template >> $LOC/$out_file.json
         else
                 i=$[$i+1]
                 HST_NAME_HOSTNAME=`echo $HOST|cut -d'=' -f2`
-		instantiator1_template >> $LOC/$out_file.json
+                instantiator1_template >> $LOC/$out_file.json
         fi
 done
+}
 #---------------------------------------------------------
+
+set_cdh_repo(){
+curl -X PUT -H "Content-Type:application/json" -u admin:admin -X PUT --data @$LOC/repo.json http://$CM_SERVER:7180/api/v19/cm/config &> /tmp/set_cdh_repo
 }
 
+import_cluster(){
+curl -X POST -H "Content-Type: application/json" -d @$out_file.json  http://admin:admin@$CM_SERVER:7180/api/v12/cm/importClusterTemplate &> /tmp/import_cluster
+}
+
+
+
+
+
+
+#prepare_hosts_file
+#ambari_repo
+#centos_repo
+#localrepo_pre_rep
+#java_install
+#bootstrap_hosts
+#cm_install
 generate_json
+set_cdh_repo
+import_cluster
 
 
