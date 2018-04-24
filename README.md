@@ -18,6 +18,8 @@ Steps:
 	./cdh_deploy.sh
 	7. parcel repository
 	$curl -X PUT -H "Content-Type:application/json" -u admin:admin -X PUT --data @repo.json http://192.168.56.112:7180/api/v19/cm/config
-	8. #Import the template using below command
+	8. Import the template using below command
 	$curl -X POST -H "Content-Type: application/json" -d @cdh.json  http://admin:admin@node2.example.com:7180/api/v12/cm/importClusterTemplate
+	9. MaxiqQueue Creation
+	$sh queue_setup.sh cluster_cloud.props
 
