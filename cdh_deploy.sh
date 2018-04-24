@@ -108,9 +108,11 @@ priority=1" > /tmp/centos7.repo
 }
 
 #+++++++++++++++++++++++
+ssh_install_pkgs(){
 sudo rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm &> /dev/null
 sudo rpm -ivh http://$REPO_SERVER/repo/custom_pkgs/sshpass-1.06-2.el7.x86_64.rpm &> /tmp/sshpass_install.txt
 sudo yum -y install unzip wget 2&>1 /dev/null
+}
 #+++++++++++++++++++++++
 
 localrepo_pre_rep ()
@@ -222,19 +224,11 @@ echo "{
 get_services()
 {
 echo "  \"services\" : [ {
-    \"refName\" : \"yarn\",
-    \"serviceType\" : \"YARN\",
+    \"refName\" : \"zookeeper\",
+    \"serviceType\" : \"ZOOKEEPER\",
     \"roleConfigGroups\" : [ {
-      \"refName\" : \"yarn-RESOURCEMANAGER-BASE\",
-      \"roleType\" : \"RESOURCEMANAGER\",
-      \"base\" : true
-    }, {
-      \"refName\" : \"yarn-JOBHISTORY-BASE\",
-      \"roleType\" : \"JOBHISTORY\",
-      \"base\" : true
-    }, {
-      \"refName\" : \"yarn-NODEMANAGER-BASE\",
-      \"roleType\" : \"NODEMANAGER\",
+      \"refName\" : \"zookeeper-SERVER-BASE\",
+      \"roleType\" : \"SERVER\",
       \"base\" : true
     } ]
   }, {
@@ -262,11 +256,99 @@ echo "  \"services\" : [ {
       \"base\" : false
     } ]
   }, {
-    \"refName\" : \"zookeeper\",
-    \"serviceType\" : \"ZOOKEEPER\",
+    \"refName\" : \"hbase\",
+    \"serviceType\" : \"HBASE\",
+    \"serviceConfigs\" : [ {
+      \"name\" : \"zookeeper_service\",
+      \"ref\" : \"zookeeper\"
+    }, {
+      \"name\" : \"hdfs_service\",
+      \"ref\" : \"hdfs\"
+    } ],
     \"roleConfigGroups\" : [ {
-      \"refName\" : \"zookeeper-SERVER-BASE\",
-      \"roleType\" : \"SERVER\",
+      \"refName\" : \"hbase-REGIONSERVER-BASE\",
+      \"roleType\" : \"REGIONSERVER\",
+      \"base\" : true
+    }, {
+      \"refName\" : \"hbase-MASTER-BASE\",
+      \"roleType\" : \"MASTER\",
+      \"base\" : true
+    } ]
+  }, {
+    \"refName\" : \"yarn\",
+    \"serviceType\" : \"YARN\",
+    \"roleConfigGroups\" : [ {
+      \"refName\" : \"yarn-RESOURCEMANAGER-BASE\",
+      \"roleType\" : \"RESOURCEMANAGER\",
+      \"base\" : true
+    }, {
+      \"refName\" : \"yarn-JOBHISTORY-BASE\",
+      \"roleType\" : \"JOBHISTORY\",
+      \"base\" : true
+    }, {
+      \"refName\" : \"yarn-NODEMANAGER-BASE\",
+      \"roleType\" : \"NODEMANAGER\",
+      \"base\" : true
+    } ]
+  }, {
+    \"refName\" : \"spark_on_yarn\",
+    \"serviceType\" : \"SPARK_ON_YARN\",
+    \"serviceConfigs\" : [ {
+      \"name\" : \"yarn_service\",
+      \"ref\" : \"yarn\"
+    } ],
+    \"roleConfigGroups\" : [ {
+      \"refName\" : \"spark_on_yarn-SPARK_YARN_HISTORY_SERVER-BASE\",
+      \"roleType\" : \"SPARK_YARN_HISTORY_SERVER\",
+      \"base\" : true
+    }, {
+      \"refName\" : \"spark_on_yarn-GATEWAY-BASE\",
+      \"roleType\" : \"GATEWAY\",
+      \"base\" : true
+    } ]
+  }, {
+    \"refName\" : \"hive\",
+    \"serviceType\" : \"HIVE\",
+    \"serviceConfigs\" : [ {
+      \"name\" : \"hive_metastore_database_user\",
+      \"variable\" : \"hive-hive_metastore_database_user\"
+    }, {
+      \"name\" : \"hive_metastore_database_type\",
+      \"variable\" : \"hive-hive_metastore_database_type\"
+    }, {
+      \"name\" : \"hive_metastore_database_host\",
+      \"variable\" : \"hive-hive_metastore_database_host\"
+    }, {
+      \"name\" : \"hive_metastore_database_name\",
+      \"variable\" : \"hive-hive_metastore_database_name\"
+    }, {
+      \"name\" : \"hive_metastore_database_password\",
+      \"variable\" : \"hive-hive_metastore_database_password\"
+    }, {
+      \"name\" : \"hive_metastore_database_port\",
+      \"variable\" : \"hive-hive_metastore_database_port\"
+    }, {
+      \"name\" : \"mapreduce_yarn_service\",
+      \"ref\" : \"yarn\"
+    }, {
+      \"name\" : \"zookeeper_service\",
+      \"ref\" : \"zookeeper\"
+    } ],
+    \"roleConfigGroups\" : [ {
+      \"refName\" : \"hive-HIVESERVER2-BASE\",
+      \"roleType\" : \"HIVESERVER2\",
+      \"base\" : true
+    }, {
+      \"refName\" : \"hive-HIVEMETASTORE-BASE\",
+      \"roleType\" : \"HIVEMETASTORE\",
+      \"base\" : true
+    }, {
+      \"refName\" : \"hive-WEBHCAT-BASE\",
+      \"roleType\" : \"WEBHCAT\",
+      \"base\" : true
+    }, {
+      \"refName\" : \"hive-GATEWAY-BASE\",
+      \"roleType\" : \"GATEWAY\",
       \"base\" : true
     } ]
   } ],"
@@ -311,6 +393,26 @@ instantiator_final_template(){
       echo "\"hostNameRange\" : \"$HST_NAME_HOSTNAME.$DOMAIN_NAME\",
       \"hostTemplateRefName\" : \"HostTemplate-$i-from-$HST_NAME_HOSTNAME.$DOMAIN_NAME\"
     } ],
+    \"variables\" : [ {
+      \"name\" : \"hive-hive_metastore_database_host\",
+      \"value\" : \"node2.example.com\"
+    }, {
+      \"name\" : \"hive-hive_metastore_database_name\",
+      \"value\" : \"hive1\"
+    }, {
+      \"name\" : \"hive-hive_metastore_database_password\",
+      \"value\" : \"hive1\"
+    }, {
+      \"name\" : \"hive-hive_metastore_database_port\",
+      \"value\" : \"7432\"
+    }, {
+      \"name\" : \"hive-hive_metastore_database_type\",
+      \"value\" : \"postgresql\"
+    }, {
+      \"name\" : \"hive-hive_metastore_database_user\",
+      \"value\" : \"hive1\"
+    } ],
+
     \"roleConfigGroups\" : [ {
       \"rcgRefName\" : \"hdfs-DATANODE-1\",
       \"name\" : \"\"
@@ -404,7 +506,7 @@ curl -X POST -H "Content-Type: application/json" -d @$out_file.json  http://admi
 
 
 
-
+#ssh_install_pkgs
 #prepare_hosts_file
 #ambari_repo
 #centos_repo
@@ -414,6 +516,6 @@ curl -X POST -H "Content-Type: application/json" -d @$out_file.json  http://admi
 #cm_install
 generate_json
 set_cdh_repo
-import_cluster
+#import_cluster
 
 

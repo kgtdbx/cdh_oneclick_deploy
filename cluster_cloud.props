@@ -45,7 +45,6 @@ IP2=192.168.56.113
 
 
 
-
 #######################  EDIT BELOW INFORMATION ONLY IF YOU KNOW WHAT YOU ARE DOING!! :)  #######################
 
 #Define your repository server EG. LOCAL or INTERNET. Make sure you should either use Local Repo server or Public to download packages
@@ -60,9 +59,8 @@ REPO_SERVER=192.168.56.101
 
 #You can define "Services" to be installed on respective hosts with comma seperated values as mentioned below.
 #Make sure you can modify below section properly making sure all services dependencies are defined properly, else cluster installation with FAIL.
-HOST1_SERVICES="hdfs-BALANCER-BASE, hdfs-NAMENODE-BASE, hdfs-SECONDARYNAMENODE-BASE, hdfs-DATANODE-BASE, yarn-RESOURCEMANAGER-BASE, yarn-JOBHISTORY-BASE, yarn-NODEMANAGER-BASE, zookeeper-SERVER-BASE"
-HOST2_SERVICES="hdfs-DATANODE-BASE, yarn-NODEMANAGER-BASE, ZOOKEEPER_CLIENT"
-HOST3_SERVICES="hdfs-DATANODE-BASE, yarn-NODEMANAGER-BASE, ZOOKEEPER_CLIENT"
+HOST1_SERVICES="hdfs-BALANCER-BASE, hdfs-NAMENODE-BASE, hdfs-SECONDARYNAMENODE-BASE, hdfs-DATANODE-BASE, yarn-RESOURCEMANAGER-BASE, yarn-JOBHISTORY-BASE, yarn-NODEMANAGER-BASE, zookeeper-SERVER-BASE,hbase-MASTER-BASE,hbase-REGIONSERVER-BASE,hive-GATEWAY-BASE,hive-HIVEMETASTORE-BASE,hive-HIVESERVER2-BASE,hive-WEBHCAT-BASE"
+HOST2_SERVICES="hdfs-DATANODE-BASE,yarn-NODEMANAGER-BASE,spark_on_yarn-SPARK_YARN_HISTORY_SERVER-BASE,spark_on_yarn-GATEWAY-BASE,zookeeper-CLIENT"
 
 #++++++++++++++++++++++++++++
 ##For HDFS define below services
